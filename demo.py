@@ -1,14 +1,14 @@
 # simple file to demonstrate the basic idea of the project
-# NOTE: must have python 3.9 installed to use tfq
+# NOTE: unfortunately, tensorflow quantum can't be installed through pip. Downloaded source code and installed using python setup.py install, but unable to import tensorflow_quantum even though I am in the correct virtual environment. Will try to fix this later.
 
 import cirq
 import sympy as sp
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
-# import tensorflow_quantum as tfq
+import tensorflow_quantum as tfq
 
-def build_circuit(classical_data, test=False):
+def build_circuit(classical_input, test=False):
     '''Implements quantum circuit to be used in the tfq model.
 
     Params:
@@ -18,9 +18,9 @@ def build_circuit(classical_data, test=False):
     Returns:
         cirq circuit
     '''
-    assert np.isclose(np.linalg.norm(classical_data), 1, atol = 1e-10), f'classical data must be normalized. Norm is {np.linalg.norm(classical_data)}'
+    assert np.isclose(np.linalg.norm(classical_input), 1, atol = 1e-10), f'classical data must be normalized. Norm is {np.linalg.norm(classical_input)}'
     
-    num_inputs = len(classical_data)
+    num_inputs = len(classical_input)
     # create a num_inputs qubit system
     qubits = [cirq.GridQubit(i, 0) for i in range(num_inputs)]  # create qubits
 
@@ -28,7 +28,7 @@ def build_circuit(classical_data, test=False):
     circuit = cirq.Circuit(cirq.H(q) for q in qubits)  # Apply a Hadamard gate to each qubit
 
     # encode classical data
-    for i, data in enumerate(classical_data):
+    for i, data in enumerate(classical_input):
         # Map data to angle
         phi = np.pi * data 
         circuit.append(cirq.ry(phi)(qubits[i]))
@@ -81,27 +81,36 @@ def build_circuit(classical_data, test=False):
         plt.bar(hist_counter.keys(), hist_counter.values())
         plt.show()
         
-    return circuit
+    return qubits, circuit
 
+def build_model(classical_input, output):
+    print(tfq.__version__)
+    num_inputs = len(classical_input)
+    output_len = len(output)
+    qubits, circuit = build_circuit(classical_input)
+    model = tf.keras.Sequential([
+        tf.keras.layers.Input(shape=(num_inputs,), dtype=tf.dtypes.float32),
+        tfq.layers.PQC(
+            circuit, operators=cirq.Z(qubits)
+            ),
+        tf.keras.layers.Dense(output_len, activation='sigmoid')
+    ])
+    # complete model
+    model = tf.keras.models.Model(inputs=[classical_input], outputs=[output])
+    model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['val_accuracy'])
+    return model
 
 if __name__ == "__main__":
     # test the circuit
     data = np.random.rand(4)
     data /= np.linalg.norm(data)
-    build_circuit(data, test=True)
+    data1 = np.random.rand(4)
+    data1 /= np.linalg.norm(data1)
+    # build_circuit(data, test=True)
+    build_model(data, data1)
 
 
-    # qubits = cirq.GridQubit.rect(1, 2)
-
-    # # entangle the qubits into Phi+
-    # circuit = cirq.Circuit(
-    #     cirq.H(qubits[0]),  # apply hadamard
-    #     cirq.CNOT(qubits[0], qubits[1])  # then CNOT
-    # )
-
-    # # define an angle for rotation
-    # theta = sp.Symbol('theta')
-    # circuit.append(cirq.rx(theta)(qubits[0])) # apply x rotation to qubit 0
+    
 
     # q_layer = tfq.layers.PQC( # create the parameterized quantum circuit as a layer
     #     cirq.resolve_parameters(circuit, {'theta': np.pi / 4}), # convert symbolic param to numeric values
@@ -121,9 +130,6 @@ if __name__ == "__main__":
     # # final dense layers
     # output = tf.keras.layers.Dense(1, activation='sigmoid')(combined)
 
-    # # complete model
-    # model = tf.keras.models.Model(inputs=[classical_input], outputs=[output])
-
-    # model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['val_accuracy'])
+    
 
   
